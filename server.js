@@ -1,5 +1,5 @@
-const { TelegramClient, Api } = require('gramjs');
-const { StringSession } = require('gramjs/sessions');
+const { TelegramClient, Api } = require('telegram');
+const { StringSession } = require('telegram/sessions');
 const express = require('express');
 const fs = require('fs');
 
@@ -123,6 +123,8 @@ app.get('/send', async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
+
+// ==== ПОРТ ====
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log([+] Сервер на порту ${PORT}));
