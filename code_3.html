@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WZ Bot Settings</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <h1>⚙️ Настройки WZ</h1>
+    <div class="card">
+      <label>Количество тапов</label>
+      <div class="stepper">
+        <button id="minusVotes">−</button>
+        <input type="number" id="votes" value="21" min="1" max="100">
+        <button id="plusVotes">+</button>
+      </div>
+    </div>
+    <div class="card">
+      <label>Частота рассылок (сек)</label>
+      <div class="stepper">
+        <button id="minusFreq">−</button>
+        <input type="number" id="frequency" value="10" min="1" max="300">
+        <button id="plusFreq">+</button>
+      </div>
+    </div>
+    <div class="card">
+      <label>Копипаста</label>
+      <textarea id="copyPaste" placeholder="Вставь текст с эмодзи..." rows="5"></textarea>
+    </div>
+    <button id="saveBtn" class="btn">💾 Сохранить</button>
+    <div id="status" class="status"></div>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
