@@ -7,8 +7,8 @@ const app = express();
 app.use(express.static('public'));
 app.use(express.json());
 
-const apiId = 123456; // ЗАМЕНИ НА СВОЙ
-const apiHash = 'твой_api_hash'; // ЗАМЕНИ НА СВОЙ
+const apiId = 32110255; // ЗАМЕНИ НА СВОЙ
+const apiHash = '3f409cb35e20eb421b8818cd14751c91'; // ЗАМЕНИ НА СВОЙ
 
 const SESSION_FILE = 'session.txt';
 let client = null;
