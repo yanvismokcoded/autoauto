@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Отправка сообщений в Telegram</title>
+</head>
+<body>
+  <h1>Отправка сообщения в Telegram</h1>
+  <input id="chatId" placeholder="ID чата (например @username или число)">
+  <input id="message" placeholder="Текст сообщения">
+  <button onclick="send()">Отправить</button>
+  <pre id="result"></pre>
+
+  <script>
+    async function send() {
+      const chatId = document.getElementById('chatId').value;
+      const message = document.getElementById('message').value;
+      const res = await fetch(`/send?chatId=${encodeURIComponent(chatId)}&message=${encodeURIComponent(message)}`);
+      document.getElementById('result').textContent = JSON.stringify(await res.json(), null, 2);
+    }
+  </script>
+</body>
+</html>
