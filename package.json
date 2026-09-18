@@ -6,7 +6,7 @@
     "start": "node server.js"
   },
   "dependencies": {
-    "gramjs": "^2.27.1",
+    "telegram": "^2.27.1",
     "express": "^4.19.2"
   }
 }
