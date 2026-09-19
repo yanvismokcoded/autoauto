@@ -1,0 +1,1 @@
+const { getDiscussionMessage } = require('telegram/client/messages');
