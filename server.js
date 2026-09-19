@@ -1,5 +1,5 @@
-const { TelegramClient, Api } = require('gramjs');
-const { StringSession } = require('gramjs/sessions');
+const { TelegramClient, Api } = require('telegram');
+const { StringSession } = require('telegram/sessions');
 const express = require('express');
 const fs = require('fs');
 
