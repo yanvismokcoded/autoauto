@@ -1,0 +1,13 @@
+{
+  "apiId": 0,
+  "apiHash": "",
+  "phone": "",
+  "botToken": "",
+  "logsChannel": "",
+  "defaultVotes": 21,
+  "confirmKeyword": "сообщите",
+  "doneKeyword": "тап сообщите",
+  "chats": [],
+  "channels": [],
+  "session": ""
+}
