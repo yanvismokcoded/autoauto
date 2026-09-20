@@ -1,3 +1,4 @@
+const { Proposer } = require('./offers');
 const bigInt = require('big-integer');
 const { NewMessage } = require('telegram/events');
 const { Api, utils } = require('telegram');
