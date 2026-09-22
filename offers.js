@@ -16,7 +16,6 @@ const norm = (s) => String(s || '').toLowerCase().replace(/ё/g, 'е');
 const HOUR = 60 * 60 * 1000;
 
 const DEFAULT_TEXT = 'вз? {link} @{user}';
-const ASK_LINK_TEXT = 'Не нашёл ваш пост с голосованием в чате — пришлите, пожалуйста, ссылку на него 🙏';
 const MIN_INTERVAL_MIN = 10;
 const MAX_INTERVAL_MIN = 7 * 24 * 60;
 const MAX_AGE_MS = 10 * 60 * 1000; // предлагаем только тем, кто писал не позже 10 минут назад
