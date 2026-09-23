@@ -80,6 +80,7 @@ function blank(id) {
     partners: { ids: {}, names: {} }, // кто уже вз-ился (по id / по юзернейму)
     offered: {}, // authorId -> { n, at, username, chatKey, key } — кому и когда уже предлагали
     offerMsgs: {}, // "chatId_msgId" нашего предложения -> { authorId, at, handled, ask }
+    ownPosts: {}, // "chatId_msgId" сообщений, которые отправил ВЗ-модуль бота (автопост, предложения, наше "вз") -> timestamp
 
     // какие каналы уже тапали какой пост (чтобы не дублировать)
     tapped: {}
@@ -105,6 +106,7 @@ function normalize(u) {
   if (!u.partners.names || typeof u.partners.names !== 'object') u.partners.names = {};
   if (!u.offered || typeof u.offered !== 'object') u.offered = {};
   if (!u.offerMsgs || typeof u.offerMsgs !== 'object') u.offerMsgs = {};
+  if (!u.ownPosts || typeof u.ownPosts !== 'object' || Array.isArray(u.ownPosts)) u.ownPosts = {};
 
   return u;
 }

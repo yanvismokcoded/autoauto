@@ -19,6 +19,9 @@ const TAP_ONLY_RE = /^тап[!.]*$/;
 const VZ_WORD_RE = /(?<![а-яa-z])вз(?![а-яa-z])|взаимк|взаимн/;
 const AFTER_YOU_REPLY_DEFAULT = 'тап, сообщите';
 
+const OWNPOSTS_TTL_MS = 30 * 24 * 3600 * 1000; // как долго помним свои сообщения
+const OWNPOSTS_MAX = 5000;
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function fmtTime(ts) {
@@ -43,7 +46,6 @@ class UserSession {
     this.autopostBusy = false;
 
     this.contexts = new Map(); // наши "сообщите" -> данные предложения
-    this.ownPosts = new Set(); // id наших разосланных предложений
     this.watched = new Set();
     this.resolvedRefs = new Map();
     this.peers = new Map(); // ref -> InputPeer (кэш, чтобы не дёргать API на каждую рассылку)
@@ -53,6 +55,27 @@ class UserSession {
     this.watchedAt = 0;
     this.refreshing = null;
     this.proposer = new Proposer(this);
+  }
+
+  // Сообщения, которые реально отправил ВЗ-модуль (автопост, предложения, наше "вз").
+  // Хранятся в users.json и переживают перезапуск.
+  hasOwnPost(key) {
+    return !!this.user.ownPosts[key];
+  }
+
+  addOwnPost(key, save = true) {
+    const posts = this.user.ownPosts;
+    posts[key] = Date.now();
+    const keys = Object.keys(posts);
+    if (keys.length > OWNPOSTS_MAX) {
+      const now = Date.now();
+      for (const k of keys) if (now - posts[k] > OWNPOSTS_TTL_MS) delete posts[k];
+      const left = Object.keys(posts);
+      if (left.length > OWNPOSTS_MAX) {
+        left.sort((a, b) => posts[a] - posts[b]).slice(0, left.length - OWNPOSTS_MAX).forEach((k) => delete posts[k]);
+      }
+    }
+    if (save) this.users.save();
   }
 
   get client() {
@@ -286,14 +309,9 @@ class UserSession {
   async getAddressee(msg, chatId, realReplyToId) {
     if (!realReplyToId) return 'none';
     const key = `${chatId}_${realReplyToId}`;
-    if (this.ownPosts.has(key) || this.contexts.has(key)) return 'me';
-    try {
-      const replied = await msg.getReplyMessage();
-      if (replied) return replied.out ? 'me' : 'other';
-    } catch (e) {
-      console.log('getReplyMessage error', e.errorMessage || e.message);
-    }
-    return 'other';
+    // «Нам» — только если это ответ на сообщение, которое отправил ВЗ-модуль.
+    // Обычные исходящие сообщения аккаунта (человек пишет с телефона) сюда не попадают.
+    return (this.hasOwnPost(key) || this.contexts.has(key)) ? 'me' : 'other';
   }
 
   async parseOffer(text, isReplyToOwnPost) {
@@ -439,6 +457,7 @@ class UserSession {
       ctx.dealMsgId = await this.postDeal(ctx, 'agreed', '⏳ Ждём подтверждения партнёра');
 
       this.contexts.set(`${chatId}_${replyMsg.id}`, ctx);
+      this.addOwnPost(`${chatId}_${replyMsg.id}`);
       await this.log(`💬 Ответил "${this.user.confirmKeyword}" в чат ${chatId} на предложение @${parsed.username} | ${parsed.link}${via ? ` (из ${via})` : ''}`);
     } catch (e) {
       console.log('reply error', e.message);
@@ -463,7 +482,7 @@ class UserSession {
       try {
         const peer = await this.resolvePeer(chats[i]);
         const sentMsg = await client.sendMessage(peer, { message: text, formattingEntities });
-        this.ownPosts.add(`${sentMsg.chatId}_${sentMsg.id}`);
+        this.addOwnPost(`${sentMsg.chatId}_${sentMsg.id}`, false);
         sent++;
       } catch (e) {
         const reason = e.errorMessage || e.message;
@@ -473,6 +492,7 @@ class UserSession {
       }
       if (i < chats.length - 1) await sleep(1500 + Math.random() * 1500);
     }
+    this.users.save();
     return { sent, total: chats.length, errors };
   }
 
