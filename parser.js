@@ -1,5 +1,13 @@
 const TG_LINK_RE = /(?:https?:\/\/)?(?:t\.me|telegram\.me)\/[^\s<>()\[\]"'«»]+/gi;
 
+// Юзы, за которых бот никогда не тапает (чс). На поиск ссылок это не влияет —
+// ссылка на пост в этих же каналах обрабатывается как обычно.
+const BLACKLISTED_USERNAMES = new Set(['mainirl', 'bestirl']);
+
+function isBlacklisted(username) {
+  return !!username && BLACKLISTED_USERNAMES.has(username.toLowerCase());
+}
+
 // Ссылки, которые не могут быть ссылкой на пост
 const NOT_POST_RE = /\/(?:\+|joinchat\/|addlist\/|addstickers\/|addemoji\/|proxy|socks)/i;
 
@@ -25,20 +33,39 @@ function pickPostLink(links) {
 }
 
 function findUsername(text) {
-  // "@юз1 & @юз2" — тап сразу за обоих, в этом же виде и отправляем
-  const pair = text.match(/@([a-zA-Z0-9_]{5,})\s*&\s*@([a-zA-Z0-9_]{5,})/);
-  if (pair) return `${pair[1]} & @${pair[2]}`;
+  // "@юз1 & @юз2" — тап сразу за обоих, в этом же виде и отправляем.
+  // Если один из пары в чс — тапаем только за второго; если оба в чс — ищем дальше.
+  const pairRe = /@([a-zA-Z0-9_]{5,})\s*&\s*@([a-zA-Z0-9_]{5,})/g;
+  let pair;
+  while ((pair = pairRe.exec(text))) {
+    const [, u1, u2] = pair;
+    const b1 = isBlacklisted(u1);
+    const b2 = isBlacklisted(u2);
+    if (!b1 && !b2) return `${u1} & @${u2}`;
+    if (b1 && !b2) return u2;
+    if (b2 && !b1) return u1;
+  }
 
-  const at = text.match(/@([a-zA-Z0-9_]{5,})/);
-  if (at) return at[1];
+  // Голое "@юз" — если он в чс, ищем следующее упоминание в тексте
+  const atRe = /@([a-zA-Z0-9_]{5,})/g;
+  let at;
+  while ((at = atRe.exec(text))) {
+    if (!isBlacklisted(at[1])) return at[1];
+  }
 
   // "юз: name", "юз name", "юзер - name", "username name"
-  const kw = text.match(/(?:юз(?:ер)?(?:нейм)?|user(?:name)?)\s*[:=\-—–]?\s*@?([a-zA-Z][a-zA-Z0-9_]{4,})/i);
-  if (kw) return kw[1];
+  const kwRe = /(?:юз(?:ер)?(?:нейм)?|user(?:name)?)\s*[:=\-—–]?\s*@?([a-zA-Z][a-zA-Z0-9_]{4,})/gi;
+  let kw;
+  while ((kw = kwRe.exec(text))) {
+    if (!isBlacklisted(kw[1])) return kw[1];
+  }
 
   // "вз? ссылка * юз" — юзер после звёздочки, @ не обязателен
-  const star = text.match(/\*\s*@?([a-zA-Z0-9_]{5,})/);
-  if (star) return star[1];
+  const starRe = /\*\s*@?([a-zA-Z0-9_]{5,})/g;
+  let star;
+  while ((star = starRe.exec(text))) {
+    if (!isBlacklisted(star[1])) return star[1];
+  }
 
   return null;
 }
@@ -88,4 +115,4 @@ function messageToText(msg) {
   return text;
 }
 
-module.exports = { parseVzMessage, parseMessageLink, messageToText };
+module.exports = { parseVzMessage, parseMessageLink, messageToText, isBlacklisted, BLACKLISTED_USERNAMES };

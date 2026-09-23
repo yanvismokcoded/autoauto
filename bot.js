@@ -82,6 +82,7 @@ function helpText(isOwner) {
     '📣 Рассылка:\n' +
     '/post <текст>\n' +
     '/tap <ссылка> @юз [количество] — тапнуть напрямую, без цепочки вз\n' +
+    '/tap <ссылка на пост> — юз и ссылку на вз бот найдёт в посте сам (можно и ответом на пересланный пост)\n' +
     '/del_tap <ссылка|all> — забыть тап по посту (или все), можно тапнуть снова\n' +
     '/autopost, /autopost_text <текст>, /autopost_every <30м|2ч|1д>\n' +
     '/autopost_on, /autopost_off, /autopost_now\n\n' +
@@ -714,8 +715,36 @@ function setupBot(config, users, sessions) {
     if (!u.channels.length) return ctx.reply('Нет каналов для тапов (/add_channel)');
 
     const body = ctx.message.text.replace(/^\/\S+\s*/, '');
-    const parsed = parser.parseVzMessage(body, true);
-    if (!parsed) return ctx.reply('Формат: /tap <ссылка на пост> @юз [количество]');
+    let parsed = parser.parseVzMessage(body, true);
+
+    // В команде нет явного юза — пробуем вытащить его прямо из поста:
+    // 1) если дали ссылку на сообщение в чате/канале — подтягиваем его текст;
+    // 2) если /tap отправлен ответом на пересланный пост — берём текст оттуда.
+    if (!parsed) {
+      const ref = parser.parseMessageLink(body);
+      if (ref) {
+        try {
+          const [linked] = await s.client.getMessages(ref.peer, { ids: [ref.id] });
+          if (linked) parsed = parser.parseVzMessage(parser.messageToText(linked), true);
+        } catch (e) {
+          console.log('tap: linked message error', e.errorMessage || e.message);
+        }
+      }
+    }
+
+    if (!parsed && ctx.message.reply_to_message) {
+      const replied = ctx.message.reply_to_message;
+      const repliedText = replied.text || replied.caption || '';
+      parsed = parser.parseVzMessage(repliedText, true);
+    }
+
+    if (!parsed) {
+      return ctx.reply(
+        'Формат: /tap <ссылка на пост> @юз [количество]\n' +
+        'Либо просто /tap <ссылка на сообщение с постом> — ссылку и юз возьму из него самого\n' +
+        'Либо ответьте командой /tap на пересланный пост'
+      );
+    }
 
     try {
       await ctx.reply(`Тапаю: @${parsed.username} | ${parsed.link}…`);
