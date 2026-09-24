@@ -466,7 +466,7 @@ class UserSession {
 
   // ---------- рассылка ----------
 
-  async broadcast(text, entities) {
+  async broadcast(text, entities, file) {
     const client = this.requireClient();
     const formattingEntities = (entities || []).map((e) => new Api.MessageEntityCustomEmoji({
       offset: e.offset,
@@ -481,7 +481,9 @@ class UserSession {
     for (let i = 0; i < chats.length; i++) {
       try {
         const peer = await this.resolvePeer(chats[i]);
-        const sentMsg = await client.sendMessage(peer, { message: text, formattingEntities });
+        const sentMsg = file
+          ? await client.sendFile(peer, { file, caption: text, formattingEntities })
+          : await client.sendMessage(peer, { message: text, formattingEntities });
         this.addOwnPost(`${sentMsg.chatId}_${sentMsg.id}`, false);
         sent++;
       } catch (e) {

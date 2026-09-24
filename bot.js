@@ -1,6 +1,8 @@
 const { registerOfferCommands } = require('./offers');
 const { Telegraf } = require('telegraf');
 const { Api, utils } = require('telegram');
+const { CustomFile } = require('telegram/client/uploads');
+const https = require('https');
 const crypto = require('crypto');
 const parser = require('./parser');
 
@@ -8,6 +10,26 @@ const parser = require('./parser');
 function generateKey() {
   const raw = crypto.randomBytes(4).toString('hex').toUpperCase();
   return `${raw.slice(0, 4)}-${raw.slice(4, 8)}`;
+}
+
+// Скачивает файл по URL в буфер (следует за редиректами, Telegram file-links их иногда отдают)
+function fetchBuffer(url, redirectsLeft = 5) {
+  return new Promise((resolve, reject) => {
+    https.get(url, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && redirectsLeft > 0) {
+        res.resume();
+        return fetchBuffer(res.headers.location, redirectsLeft - 1).then(resolve, reject);
+      }
+      if (res.statusCode !== 200) {
+        res.resume();
+        return reject(new Error(`Не смог скачать файл (HTTP ${res.statusCode})`));
+      }
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => resolve(Buffer.concat(chunks)));
+      res.on('error', reject);
+    }).on('error', reject);
+  });
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -80,7 +102,8 @@ function helpText(isOwner) {
     '/add_channel <ссылка> [...], /channels, /del_channel <ссылка> [...]\n' +
     '/create_channel <название>\n\n' +
     '📣 Рассылка:\n' +
-    '/post <текст>\n' +
+    '/post <текст> — рассылка текстом; пришли фото с подписью "/post текст" — разошлю картинку с подписью\n' +
+    '/post <текст> ответом на сообщение с фото — разошлю то же фото с этим текстом\n' +
     '/tap <ссылка> @юз [количество] — тапнуть напрямую, без цепочки вз\n' +
     '/tap <ссылка на пост> — юз и ссылку на вз бот найдёт в посте сам (можно и ответом на пересланный пост)\n' +
     '/del_tap <ссылка|all> — забыть тап по посту (или все), можно тапнуть снова\n' +
@@ -689,13 +712,35 @@ function setupBot(config, users, sessions) {
     return { text, entities };
   }
 
-  bot.command('post', async (ctx) => {
+  // то же самое, но текст берём из подписи к фото (caption / caption_entities)
+  function extractCaptionPayload(ctx, stripCommand) {
+    const full = ctx.message.caption || '';
+    let prefixLen = 0;
+    if (stripCommand) {
+      const m = full.match(/^\/\S+\s*/);
+      prefixLen = m ? m[0].length : 0;
+    }
+    const text = full.slice(prefixLen).trimEnd();
+    const entities = (ctx.message.caption_entities || [])
+      .filter((e) => e.type === 'custom_emoji' && e.offset >= prefixLen && e.offset < prefixLen + text.length)
+      .map((e) => ({ offset: e.offset - prefixLen, length: e.length, documentId: String(e.custom_emoji_id) }));
+    return { text, entities };
+  }
+
+  // Скачивает самое крупное фото из массива message.photo и заворачивает в CustomFile для gramjs
+  async function downloadTgPhoto(ctx, photoArr) {
+    const best = photoArr[photoArr.length - 1];
+    const link = await ctx.telegram.getFileLink(best.file_id);
+    const buf = await fetchBuffer(typeof link === 'string' ? link : link.href);
+    return new CustomFile(`photo_${best.file_id}.jpg`, buf.length, '', buf);
+  }
+
+  async function doBroadcast(ctx, text, entities, file) {
     const u = U(ctx);
-    const { text, entities } = extractPayload(ctx);
-    if (!text) return ctx.reply('Укажи текст');
+    if (!text && !file) return ctx.reply('Укажи текст (или пришли фото с подписью)');
     if (!u.chats.length) return ctx.reply('Нет вз-чатов');
     try {
-      const { sent, total, errors } = await S(ctx).broadcast(text, entities);
+      const { sent, total, errors } = await S(ctx).broadcast(text, entities, file);
       let out = sent === total ? `Разослано в ${sent} чатов` : `Разослано в ${sent} из ${total} чатов`;
       if (errors && errors.length) {
         out += `\n\nНе ушло (${errors.length}):\n` + errors.slice(0, 20).join('\n');
@@ -706,6 +751,38 @@ function setupBot(config, users, sessions) {
     } catch (e) {
       ctx.reply(`Ошибка: ${e.message}`);
     }
+  }
+
+  bot.command('post', async (ctx) => {
+    const { text, entities } = extractPayload(ctx);
+
+    // /post <текст> ответом на сообщение с фото — картинку берём из него
+    let file = null;
+    const repliedPhoto = ctx.message.reply_to_message && ctx.message.reply_to_message.photo;
+    if (repliedPhoto) {
+      try {
+        file = await downloadTgPhoto(ctx, repliedPhoto);
+      } catch (e) {
+        return ctx.reply(`Не смог скачать фото из ответа: ${e.message}`);
+      }
+    }
+
+    await doBroadcast(ctx, text, entities, file);
+  });
+
+  // Фото с подписью "/post текст…" — рассылаем картинку с текстом как есть
+  bot.on('photo', async (ctx) => {
+    const caption = ctx.message.caption || '';
+    if (!/^\/post(?:@\w+)?(\s|$)/.test(caption)) return; // не наша команда — не трогаем
+
+    const { text, entities } = extractCaptionPayload(ctx, true);
+    let file;
+    try {
+      file = await downloadTgPhoto(ctx, ctx.message.photo);
+    } catch (e) {
+      return ctx.reply(`Не смог скачать фото: ${e.message}`);
+    }
+    await doBroadcast(ctx, text, entities, file);
   });
 
   bot.command('tap', async (ctx) => {
