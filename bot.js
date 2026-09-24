@@ -115,7 +115,11 @@ function helpText(isOwner) {
     '/settings — личные настройки\n' +
     '/set <параметр> <значение> — изменить настройку\n' +
     '/logs_channel <ссылка|off> — технический лог\n' +
-    '/status — статус'
+    '/status — статус\n\n' +
+    '🆘 Техподдержка:\n' +
+    '/support <текст> — написать владельцу бота (можно приложить фото/скрин: пришли фото с подписью "/support текст" или ответом добавь /support <текст> к сообщению с фото)\n' +
+    'Ответ придёт сюда же' +
+    (isOwner ? '\n\nВладельцу: чтобы ответить — просто ответьте (reply) на пересланное сообщение из /support' : '')
   );
 }
 
@@ -128,14 +132,14 @@ function setupBot(config, users, sessions) {
   const isOwner = (ctx) => !!config.data.ownerId && String(ctx.from.id) === String(config.data.ownerId);
   const isRegistered = (ctx) => users.has(ctx.from.id);
 
-  const PUBLIC_COMMANDS = ['/start', '/activate', '/help'];
+  const PUBLIC_COMMANDS = ['/start', '/activate', '/help', '/support'];
 
   bot.use((ctx, next) => {
     if (!ctx.from || ctx.chat?.type !== 'private') return; // бот работает только в личке
     if (isRegistered(ctx)) return next();
 
-    const text = (ctx.message && ctx.message.text) || '';
-    const cmd = text.split(/[\s@]/)[0];
+    const raw = (ctx.message && (ctx.message.text || ctx.message.caption)) || '';
+    const cmd = raw.split(/[\s@]/)[0];
     if (PUBLIC_COMMANDS.includes(cmd)) return next();
 
     return ctx.reply(
@@ -753,6 +757,52 @@ function setupBot(config, users, sessions) {
     }
   }
 
+  // ---------- техподдержка ----------
+
+  function pruneSupportThreads() {
+    const entries = Object.entries(config.data.supportThreads || {});
+    if (entries.length <= 1000) return;
+    entries.sort((a, b) => (a[1].at || 0) - (b[1].at || 0));
+    for (const [k] of entries.slice(0, entries.length - 1000)) delete config.data.supportThreads[k];
+  }
+
+  async function forwardToSupport(ctx, text, photoFileId) {
+    const ownerId = config.data.ownerId;
+    if (!ownerId) return ctx.reply('Техподдержка временно недоступна — у бота не задан владелец.');
+    if (String(ctx.from.id) === String(ownerId)) {
+      return ctx.reply('Вы — владелец бота, писать в техподдержку самому себе незачем 🙂');
+    }
+    if (!text && !photoFileId) return ctx.reply('Опишите проблему: /support <текст> (можно приложить фото)');
+
+    const fromName = ctx.from.username ? `@${ctx.from.username}` : (ctx.from.first_name || 'без имени');
+    const body = `📩 Обращение в поддержку\nОт: ${fromName} (id: ${ctx.from.id})\n\n${text || ''}`.trim();
+
+    try {
+      const sent = photoFileId
+        ? await ctx.telegram.sendPhoto(ownerId, photoFileId, { caption: body.slice(0, 1024) })
+        : await ctx.telegram.sendMessage(ownerId, body);
+
+      config.data.supportThreads[String(sent.message_id)] = {
+        userId: String(ctx.from.id),
+        username: ctx.from.username || null,
+        at: Date.now()
+      };
+      pruneSupportThreads();
+      config.save();
+      await ctx.reply('✅ Сообщение отправлено в поддержку. Ответ придёт сюда же.');
+    } catch (e) {
+      await ctx.reply(`Не удалось отправить в поддержку: ${e.message}`);
+    }
+  }
+
+  bot.command('support', async (ctx) => {
+    const { text } = extractPayload(ctx);
+    // /support <текст> ответом на сообщение с фото — прикладываем это фото
+    const repliedPhoto = ctx.message.reply_to_message && ctx.message.reply_to_message.photo;
+    const photoFileId = repliedPhoto ? repliedPhoto[repliedPhoto.length - 1].file_id : null;
+    await forwardToSupport(ctx, text, photoFileId);
+  });
+
   bot.command('post', async (ctx) => {
     const { text, entities } = extractPayload(ctx);
 
@@ -770,19 +820,45 @@ function setupBot(config, users, sessions) {
     await doBroadcast(ctx, text, entities, file);
   });
 
-  // Фото с подписью "/post текст…" — рассылаем картинку с текстом как есть
+  // Фото с подписью "/post текст…" — рассылаем картинку с текстом как есть.
+  // Фото с подписью "/support текст…" — уходит в техподдержку.
+  // Фото-ответ владельца на обращение в поддержку — уходит обратно пользователю.
   bot.on('photo', async (ctx) => {
     const caption = ctx.message.caption || '';
-    if (!/^\/post(?:@\w+)?(\s|$)/.test(caption)) return; // не наша команда — не трогаем
 
-    const { text, entities } = extractCaptionPayload(ctx, true);
-    let file;
-    try {
-      file = await downloadTgPhoto(ctx, ctx.message.photo);
-    } catch (e) {
-      return ctx.reply(`Не смог скачать фото: ${e.message}`);
+    if (/^\/post(?:@\w+)?(\s|$)/.test(caption)) {
+      const { text, entities } = extractCaptionPayload(ctx, true);
+      let file;
+      try {
+        file = await downloadTgPhoto(ctx, ctx.message.photo);
+      } catch (e) {
+        return ctx.reply(`Не смог скачать фото: ${e.message}`);
+      }
+      return doBroadcast(ctx, text, entities, file);
     }
-    await doBroadcast(ctx, text, entities, file);
+
+    if (/^\/support(?:@\w+)?(\s|$)/.test(caption)) {
+      const { text } = extractCaptionPayload(ctx, true);
+      const photoFileId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
+      return forwardToSupport(ctx, text, photoFileId);
+    }
+
+    // владелец отвечает фото в треде поддержки
+    if (isOwner(ctx)) {
+      const replied = ctx.message.reply_to_message;
+      const thread = replied && config.data.supportThreads[String(replied.message_id)];
+      if (thread) {
+        const photoFileId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
+        try {
+          await ctx.telegram.sendPhoto(thread.userId, photoFileId, {
+            caption: caption ? `🛠 Ответ от поддержки:\n\n${caption}` : '🛠 Ответ от поддержки'
+          });
+          await ctx.reply('✅ Отправлено пользователю');
+        } catch (e) {
+          await ctx.reply(`Не смог отправить: ${e.message}`);
+        }
+      }
+    }
   });
 
   bot.command('tap', async (ctx) => {
@@ -1007,6 +1083,23 @@ function setupBot(config, users, sessions) {
       `Лог-канал: ${u.logsChannel || 'не выбран'}\n` +
       `Автопост: ${u.autopost.enabled ? 'каждые ' + fmtMinutes(u.autopost.intervalMin) : 'выключен'}`
     );
+  });
+
+  // Ответ владельца текстом на пересланное обращение в поддержку —
+  // сюда попадают только сообщения, не подошедшие ни под одну команду выше
+  bot.on('text', async (ctx) => {
+    if (!isOwner(ctx)) return;
+    const replied = ctx.message.reply_to_message;
+    if (!replied) return;
+    const thread = config.data.supportThreads[String(replied.message_id)];
+    if (!thread) return;
+
+    try {
+      await ctx.telegram.sendMessage(thread.userId, `🛠 Ответ от поддержки:\n\n${ctx.message.text}`);
+      await ctx.reply('✅ Отправлено пользователю');
+    } catch (e) {
+      await ctx.reply(`Не смог отправить: ${e.message}`);
+    }
   });
 
   bot.catch((err, ctx) => {

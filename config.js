@@ -21,7 +21,8 @@ const DEFAULTS = {
   doneKeyword: 'тап сообщите',
   afterYouReply: 'тап, сообщите',
   answerGeneralOffers: false,
-  pendingKeys: {}
+  pendingKeys: {},
+  supportThreads: {} // messageId (в чате владельца) -> { userId, username, at } — для двусторонней техподдержки
 };
 
 let data = {};
