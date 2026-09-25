@@ -86,7 +86,8 @@ function helpText(isOwner) {
     '/code <код> — код из Telegram\n' +
     '/password <пароль> — 2FA\n' +
     '/logout — выйти из аккаунта\n' +
-    '/login_code — если сессия ещё жива: прочитать код входа из служебного чата Telegram (777000) — пригодится, когда SMS с кодом не приходит, т.к. Telegram шлёт его в уже активную сессию\n' +
+    '/login_code — если сессия ещё жива: показать последние сообщения из служебного чата Telegram (777000, до 20 шт.) — на случай, если код всё же не переслался автоматически\n' +
+    'ℹ️ Пока сессия активна, коды входа и другие сообщения от Telegram (777000) пересылаются сразу и автоматически — в лог-канал и в личку\n' +
     '/api <apiId> <apiHash> — свои api-ключи (необязательно)\n\n' +
     '📄 Договоры о ВЗ:\n' +
     '/deals_channel <ссылка|@юз|id> — выбрать канал для договоров\n' +
@@ -309,7 +310,7 @@ function setupBot(config, users, sessions) {
           'Нужно заново авторизоваться: /login <номер>, тогда Telegram пришлёт код по SMS или звонком.'
         );
       }
-      const messages = await s.getServiceMessages(5);
+      const messages = await s.getServiceMessages(20);
       const withText = messages.filter((m) => m.message);
       if (!withText.length) return ctx.reply('В служебном чате Telegram (777000) пока пусто.');
 
