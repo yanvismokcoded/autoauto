@@ -211,6 +211,20 @@ class UserSession {
     }
   }
 
+  // Последние сообщения от официального служебного аккаунта Telegram (id 777000).
+  // Туда прилетает код входа, если у аккаунта уже есть другая живая сессия —
+  // в этом случае Telegram не шлёт SMS/звонок, и код можно прочитать отсюда.
+  async getServiceMessages(limit = 5) {
+    const client = this.requireClient();
+    await this.primeDialogs();
+    try {
+      return await client.getMessages('777000', { limit });
+    } catch (e) {
+      await this.primeDialogs(true);
+      return await client.getMessages('777000', { limit });
+    }
+  }
+
   // Превращает сохранённую ссылку/id в InputPeer.
   // Голый положительный id может означать и супергруппу (-100...), и обычную
   // группу (-...), поэтому пробуем оба варианта.

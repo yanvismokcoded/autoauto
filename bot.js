@@ -86,6 +86,7 @@ function helpText(isOwner) {
     '/code <код> — код из Telegram\n' +
     '/password <пароль> — 2FA\n' +
     '/logout — выйти из аккаунта\n' +
+    '/login_code — если сессия ещё жива: прочитать код входа из служебного чата Telegram (777000) — пригодится, когда SMS с кодом не приходит, т.к. Telegram шлёт его в уже активную сессию\n' +
     '/api <apiId> <apiHash> — свои api-ключи (необязательно)\n\n' +
     '📄 Договоры о ВЗ:\n' +
     '/deals_channel <ссылка|@юз|id> — выбрать канал для договоров\n' +
@@ -292,6 +293,35 @@ function setupBot(config, users, sessions) {
       ctx.reply('👋 Вышли из аккаунта. Списки чатов и каналов сохранены. Вход снова — /login <номер>');
     } catch (e) {
       ctx.reply(`Ошибка: ${e.message}`);
+    }
+  });
+
+  // Если у аккаунта уже есть живая сессия (эта самая) — при новом входе с телефона
+  // Telegram шлёт код не SMS'ом, а сообщением от служебного аккаунта 777000.
+  // Эта команда читает его через нашу сессию.
+  bot.command('login_code', async (ctx) => {
+    const s = S(ctx);
+    try {
+      await s.userbot.connect();
+      if (!(await s.userbot.isAuthorized())) {
+        return ctx.reply(
+          'Текущая сессия недействительна — через бота код так не получить.\n' +
+          'Нужно заново авторизоваться: /login <номер>, тогда Telegram пришлёт код по SMS или звонком.'
+        );
+      }
+      const messages = await s.getServiceMessages(5);
+      const withText = messages.filter((m) => m.message);
+      if (!withText.length) return ctx.reply('В служебном чате Telegram (777000) пока пусто.');
+
+      const lines = withText.map((m) => {
+        const d = new Date(m.date * 1000);
+        const p = (n) => String(n).padStart(2, '0');
+        const time = `${p(d.getDate())}.${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
+        return `[${time}] ${m.message}`;
+      });
+      await ctx.reply(`📨 Последние сообщения от Telegram:\n\n${lines.join('\n\n')}`);
+    } catch (e) {
+      ctx.reply(`Ошибка: ${e.errorMessage || e.message}`);
     }
   });
 
